@@ -33,6 +33,7 @@ Original sources by Jonathan A. Zdziarski
 
 */
 
+#include <netdb.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -70,6 +71,7 @@ module AP_MODULE_DECLARE_DATA ambig_module;
 #define DEFAULT_PAGE_INTERVAL   1       // Default 1 Second page interval
 #define DEFAULT_SITE_INTERVAL   1       // Default 1 Second site interval
 #define DEFAULT_BLOCKING_PERIOD 10      // Default for Detected IPs; blocked for 10 seconds
+#define DEFAULT_HOST_MATCH		1       // Default matching hostnames
 #define DEFAULT_LOG_DIR		"/tmp"  // Default temp directory
 
 /* END DoS Definitions */
@@ -113,7 +115,7 @@ struct ntt_node *c_ntt_next(struct ntt *ntt, struct ntt_c *c);
 
 /* BEGIN DoS Globals */
 
-struct ntt *hit_list;	// Our dynamic hash table
+struct ntt *hit_list = NULL;	// Our dynamic hash table
 
 static unsigned long hash_table_size = DEFAULT_HASH_TBL_SIZE;
 static int page_count = DEFAULT_PAGE_COUNT;
@@ -121,11 +123,13 @@ static int page_interval = DEFAULT_PAGE_INTERVAL;
 static int site_count = DEFAULT_SITE_COUNT;
 static int site_interval = DEFAULT_SITE_INTERVAL;
 static int blocking_period = DEFAULT_BLOCKING_PERIOD;
+static int host_match = DEFAULT_HOST_MATCH;
 static char *email_notify = NULL;
 static char *log_dir = NULL;
 static char *system_command = NULL;
 static const char *whitelist(cmd_parms *cmd, void *dconfig, const char *ip);
 int is_whitelisted(const char *ip);
+static int resolver(const char *node, char *hostname);
 
 /* END DoS Globals */
 
@@ -269,6 +273,7 @@ static int access_checker(request_rec *r) {
 
 int is_whitelisted(const char *ip) {
 	char hashkey[128];
+	char hostname[1025];
 	char octet[4][4];
 	char *dip;
 	char *oct;
@@ -287,6 +292,21 @@ int is_whitelisted(const char *ip) {
 		oct = strtok(NULL, ".");
 	}
 	free(dip);
+
+	/* Match whitelisted hostnames*/
+	if (host_match) {
+		if (resolver(ip, hostname) < 0) {
+			LOG(LOG_ALERT, "Couldn't resolve %s", ip);
+		} else {
+			// LOG(LOG_ALERT, "host %s", hostname);
+
+			/* Match hostname */
+			char hosthashkey[1153];
+			snprintf(hosthashkey, sizeof(hosthashkey), "WHITELIST_%s", hostname);
+			if (ntt_find(hit_list, hosthashkey) != NULL)
+				return 1;
+		}
+	}
 
 	/* Always exclude locals */
 	if (!strcmp("::1", ip)) {
@@ -316,6 +336,31 @@ int is_whitelisted(const char *ip) {
 		return 1;
 
 	/* No match */
+	return 0;
+}
+
+static int resolver(const char *node, char *hostname) {
+	struct addrinfo *result;
+	struct addrinfo *res;
+	int error;
+
+	/* Resolve the domain name into a list of addresses */
+	error = getaddrinfo(node, NULL, NULL, &result);
+	if (error != 0)
+		return -1;
+
+	/* Loop over all returned results and do inverse lookup */
+	for (res = result; res != NULL; res = res->ai_next) {
+		error = getnameinfo(res->ai_addr, res->ai_addrlen, hostname, 1025, NULL, 0, 0);
+		if (error != 0)
+			continue;
+
+		if (*hostname == '\0')
+			continue;
+		// printf("hostname: %s\n", hostname);
+	}
+
+	freeaddrinfo(result);
 	return 0;
 }
 
