@@ -56,7 +56,11 @@ module AP_MODULE_DECLARE_DATA ambig_module;
 /* BEGIN DoS Definitions */
 
 #define MAILER	"/bin/mail %s"
-#define LOG( A, ... ) { openlog("mod_ambig", LOG_PID, LOG_DAEMON); syslog( A, __VA_ARGS__ ); closelog(); }
+#define LOG( A, ... ) { \
+	openlog("mod_ambig", LOG_PID, LOG_DAEMON); \
+	syslog( A, __VA_ARGS__ ); \
+	closelog(); \
+}
 
 #define DEFAULT_HASH_TBL_SIZE   3097ul  // Default hash table size
 #define DEFAULT_PAGE_COUNT      2       // Default maximum page hit count per interval
@@ -255,7 +259,7 @@ static int access_checker(request_rec *r) {
 	/* END DoS Code */
 
 	if (ret == HTTP_FORBIDDEN && (ap_satisfies(r) != SATISFY_ANY || !ap_some_auth_required(r))) {
-		ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "client denied by server configuration: %s", r->filename);
+		ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "client %s denied by mod_ambig: %s", r->useragent_ip, r->filename);
 	}
 
 	return ret;
@@ -281,6 +285,15 @@ int is_whitelisted(const char *ip) {
 		oct = strtok(NULL, ".");
 	}
 	free(dip);
+
+	/* Always exclude locals */
+	if (!strcmp("::1", ip)) {
+		return 1;
+	}
+
+	if (!strcmp("127.0.0.1", ip)) {
+		return 1;
+	}
 
 	/* Exact Match */
 	snprintf(hashkey, sizeof(hashkey), "WHITELIST_%s", ip);
