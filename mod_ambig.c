@@ -127,7 +127,6 @@ static int host_match = DEFAULT_HOST_MATCH;
 static char *email_notify = NULL;
 static char *log_dir = NULL;
 static char *system_command = NULL;
-static const char *whitelist(cmd_parms *cmd, void *dconfig, const char *ip);
 int is_whitelisted(const char *ip);
 static int resolver(const char *node, char *hostname);
 
@@ -139,10 +138,12 @@ static void * create_hit_list(apr_pool_t *p, server_rec *s) {
 	hit_list = ntt_create(hash_table_size);
 }
 
-static const char *whitelist(cmd_parms *cmd, void *dconfig, const char *ip) {
-	char entry[128];
-	snprintf(entry, sizeof(entry), "WHITELIST_%s", ip);
+static const char *whitelist(cmd_parms *cmd, void *dconfig, const char *value) {
+	char entry[1024];
+	snprintf(entry, sizeof(entry), "WHITELIST_%s", value);
 	ntt_insert(hit_list, entry, time(NULL));
+
+	LOG(LOG_ALERT, "Added %s to exceptions", value);
 
 	return NULL;
 }
@@ -298,7 +299,6 @@ int is_whitelisted(const char *ip) {
 		if (resolver(ip, hostname) < 0) {
 			LOG(LOG_ALERT, "Couldn't resolve %s", ip);
 		} else {
-			// LOG(LOG_ALERT, "host %s", hostname);
 
 			/* Match hostname */
 			char hosthashkey[1153];
@@ -718,35 +718,16 @@ get_system_command(cmd_parms *cmd, void *dconfig, const char *value) {
 /* END Configuration Functions */
 
 static const command_rec access_cmds[] = {
-	AP_INIT_TAKE1("DOSHashTableSize", get_hash_tbl_size, NULL, RSRC_CONF,
-	"Set size of hash table"),
-
-	AP_INIT_TAKE1("DOSPageCount", get_page_count, NULL, RSRC_CONF,
-	"Set maximum page hit count per interval"),
-
-	AP_INIT_TAKE1("DOSSiteCount", get_site_count, NULL, RSRC_CONF,
-	"Set maximum site hit count per interval"),
-
-	AP_INIT_TAKE1("DOSPageInterval", get_page_interval, NULL, RSRC_CONF,
-	"Set page interval"),
-
-	AP_INIT_TAKE1("DOSSiteInterval", get_site_interval, NULL, RSRC_CONF,
-	"Set site interval"),
-
-	AP_INIT_TAKE1("DOSBlockingPeriod", get_blocking_period, NULL, RSRC_CONF,
-	"Set blocking period for detected DoS IPs"),
-
-	AP_INIT_TAKE1("DOSEmailNotify", get_email_notify, NULL, RSRC_CONF,
-	"Set email notification"),
-
-	AP_INIT_TAKE1("DOSLogDir", get_log_dir, NULL, RSRC_CONF,
-	"Set log dir"),
-
-	AP_INIT_TAKE1("DOSSystemCommand", get_system_command, NULL, RSRC_CONF,
-	"Set system command on DoS"),
-
-	AP_INIT_ITERATE("DOSWhitelist", whitelist, NULL, RSRC_CONF,
-	"IP-addresses wildcards to whitelist"),
+	AP_INIT_TAKE1("HashTableSize", get_hash_tbl_size, NULL, RSRC_CONF, "Set size of hash table"),
+	AP_INIT_TAKE1("PageCount", get_page_count, NULL, RSRC_CONF, "Set maximum page hit count per interval"),
+	AP_INIT_TAKE1("SiteCount", get_site_count, NULL, RSRC_CONF, "Set maximum site hit count per interval"),
+	AP_INIT_TAKE1("PageInterval", get_page_interval, NULL, RSRC_CONF, "Set page interval"),
+	AP_INIT_TAKE1("SiteInterval", get_site_interval, NULL, RSRC_CONF, "Set site interval"),
+	AP_INIT_TAKE1("BlockingPeriod", get_blocking_period, NULL, RSRC_CONF, "Set blocking period for detected DoS IPs"),
+	AP_INIT_TAKE1("EmailNotify", get_email_notify, NULL, RSRC_CONF, "Set email notification"),
+	AP_INIT_TAKE1("LogDir", get_log_dir, NULL, RSRC_CONF, "Set log dir"),
+	AP_INIT_TAKE1("Exec", get_system_command, NULL, RSRC_CONF, "Set system command on DoS"),
+	AP_INIT_ITERATE("Exclude", whitelist, NULL, RSRC_CONF, "Exclude ip or hostname"),
 
 	{ NULL }
 };
